@@ -19,6 +19,7 @@ import {
   getCloudinaryConfig,
   saveCloudinaryConfig,
   uploadMultipleToCloudinary,
+  isImageFile,
   CloudinaryUploadResult,
   CloudinaryConfig
 } from "@/lib/cloudinary";
@@ -41,7 +42,7 @@ export function CloudinaryUploader({
   maxFiles = 30,
   className = "",
   label = "Upload Images to Cloudinary",
-  description = "Drag and drop image files or click to browse. Max 10MB per image.",
+  description = "Drag and drop image files (JPG, PNG, HEIC/iPhone, WebP, SVG) or click to browse.",
   buttonText = "Bulk Upload Images"
 }: CloudinaryUploaderProps) {
   const [config, setConfig] = useState<CloudinaryConfig>({
@@ -97,9 +98,9 @@ export function CloudinaryUploader({
       return;
     }
 
-    const filesArray = Array.from(fileList).filter(f => f.type.startsWith("image/"));
+    const filesArray = Array.from(fileList).filter(f => isImageFile(f));
     if (filesArray.length === 0) {
-      setErrorMessage("No valid image files selected.");
+      setErrorMessage("No supported image files found. Please select JPG, PNG, HEIC, WEBP, or GIF files.");
       return;
     }
 
@@ -148,7 +149,7 @@ export function CloudinaryUploader({
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,image/svg+xml"
+        accept="image/*,.heic,.HEIC,.heif,.HEIF,.jpg,.jpeg,.png,.webp,.gif,.svg,.avif"
         multiple={multiple}
         className="hidden"
         onChange={(e) => handleFiles(e.target.files)}

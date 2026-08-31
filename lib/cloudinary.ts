@@ -63,9 +63,21 @@ export function saveCloudinaryConfig(cloudName: string, uploadPreset: string) {
   }
 }
 
-export function validateImageFile(file: File, maxMb: number = 10): { valid: boolean; error?: string } {
-  if (!file.type.startsWith("image/")) {
-    return { valid: false, error: `${file.name} is not a valid image file.` };
+export function isImageFile(file: File): boolean {
+  if (file.type && file.type.startsWith("image/")) {
+    return true;
+  }
+  const name = file.name.toLowerCase();
+  const validExtensions = [
+    ".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg",
+    ".heic", ".heif", ".avif", ".bmp", ".tiff"
+  ];
+  return validExtensions.some(ext => name.endsWith(ext));
+}
+
+export function validateImageFile(file: File, maxMb: number = 25): { valid: boolean; error?: string } {
+  if (!isImageFile(file)) {
+    return { valid: false, error: `${file.name} is not a supported image format. Supported: JPG, PNG, WEBP, HEIC, HEIF, GIF, SVG, AVIF.` };
   }
 
   const maxBytes = maxMb * 1024 * 1024;
@@ -74,6 +86,24 @@ export function validateImageFile(file: File, maxMb: number = 10): { valid: bool
   }
 
   return { valid: true };
+}
+
+/**
+ * Ensures Cloudinary URLs are web-compatible across all browsers.
+ * If an image was uploaded as HEIC/HEIF, modern browsers (Chrome/Firefox/Edge on non-Apple devices)
+ * cannot render raw .heic in <img> tags.
+ * Cloudinary can dynamically convert .heic to .jpg/.webp on the fly by either changing extension or adding format transforms.
+ */
+export function formatWebFriendlyCloudinaryUrl(url: string, format?: string): string {
+  if (!url) return "";
+  let cleanUrl = url;
+  
+  // If extension is .heic or .heif, replace extension with .jpg or inject f_auto
+  if (cleanUrl.match(/\.(heic|heif)(\?.*)?$/i) || format?.toLowerCase() === "heic" || format?.toLowerCase() === "heif") {
+    cleanUrl = cleanUrl.replace(/\.(heic|heif)(\?.*)?$/i, ".jpg$2");
+  }
+
+  return cleanUrl;
 }
 
 export async function uploadSingleToCloudinary(
@@ -117,10 +147,13 @@ export async function uploadSingleToCloudinary(
   }
 
   const data = await response.json();
+  const rawSecureUrl = data.secure_url || data.url || "";
+  const rawUrl = data.url || data.secure_url || "";
+  const format = data.format || (file.name.toLowerCase().endsWith(".heic") ? "heic" : (file.name.toLowerCase().endsWith(".heif") ? "heif" : ""));
 
   return {
-    url: data.url || data.secure_url,
-    secureUrl: data.secure_url || data.url,
+    url: formatWebFriendlyCloudinaryUrl(rawUrl, format),
+    secureUrl: formatWebFriendlyCloudinaryUrl(rawSecureUrl, format),
     publicId: data.public_id,
     format: data.format,
     width: data.width,
