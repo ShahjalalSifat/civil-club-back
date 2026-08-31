@@ -11,6 +11,7 @@ import {
   writeBatch 
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { CloudinaryUploader } from "@/components/cloudinary-upload";
 import { 
   Trash2, 
   Edit2, 
@@ -26,7 +27,8 @@ import {
   X, 
   ExternalLink,
   AlertCircle,
-  FolderOpen
+  FolderOpen,
+  Image as ImageIcon
 } from "lucide-react";
 
 interface ResourceItem {
@@ -665,17 +667,49 @@ export default function ResourcesPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1.5">
-                  Cover / Thumbnail Image URL
+              {/* Cover / Thumbnail URL & Cloudinary Uploader */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest">
+                  Cover / Thumbnail Image (Upload or Manual URL)
                 </label>
-                <input 
-                  type="url" 
-                  placeholder="https://example.com/thumbnail.jpg"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-[16px] p-3.5 text-sm text-[#0F172A] outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" 
-                  value={formData.coverImageUrl} 
-                  onChange={e=>setFormData({...formData, coverImageUrl:e.target.value})} 
-                />
+
+                <div className="flex flex-col sm:flex-row gap-3 items-start">
+                  <div className="w-20 h-20 rounded-2xl bg-slate-100 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center shadow-2xs">
+                    {formData.coverImageUrl ? (
+                      <img
+                        src={formData.coverImageUrl}
+                        alt="Resource Thumbnail Preview"
+                        className="w-full h-full object-cover"
+                        onError={(e) => { (e.target as HTMLElement).style.display = "none"; }}
+                      />
+                    ) : (
+                      <ImageIcon className="w-7 h-7 text-slate-300" />
+                    )}
+                  </div>
+
+                  <div className="flex-1 w-full space-y-2">
+                    <input 
+                      type="url" 
+                      placeholder="https://example.com/thumbnail.jpg"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-[14px] p-3 text-xs text-[#0F172A] outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" 
+                      value={formData.coverImageUrl} 
+                      onChange={e=>setFormData({...formData, coverImageUrl:e.target.value})} 
+                    />
+
+                    <CloudinaryUploader
+                      folder="cechstu_resources"
+                      multiple={false}
+                      label="Or upload resource thumbnail from device"
+                      description="Uploads to Cloudinary and populates Thumbnail Image URL"
+                      buttonText="Choose Thumbnail"
+                      onUploadComplete={(results) => {
+                        if (results.length > 0) {
+                          setFormData(prev => ({ ...prev, coverImageUrl: results[0].secureUrl }));
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
               </div>
 
               <div>

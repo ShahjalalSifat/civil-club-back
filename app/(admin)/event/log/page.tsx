@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { collection, getDocs, addDoc, deleteDoc, updateDoc, doc, query, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { Trash2, Edit2, Plus } from "lucide-react";
+import { CloudinaryUploader } from "@/components/cloudinary-upload";
+import { Trash2, Edit2, Plus, Image as ImageIcon } from "lucide-react";
 
 interface EventLog {
   id: string;
@@ -118,9 +119,50 @@ export default function LogPage() {
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Location</label>
                 <input type="text" className="w-full bg-slate-50 border border-slate-200 rounded-[18px] p-4 text-[#0F172A] outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.location} onChange={e=>setFormData({...formData, location:e.target.value})} />
               </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Cover Image URL</label>
-                <input required type="url" className="w-full bg-slate-50 border border-slate-200 rounded-[18px] p-4 text-[#0F172A] outline-none focus:ring-2 focus:ring-blue-500 transition-all" value={formData.coverImageUrl} onChange={e=>setFormData({...formData, coverImageUrl:e.target.value})} />
+              {/* Cover Image URL & Cloudinary Uploader */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest">
+                  Cover Image (Upload or Manual URL) *
+                </label>
+
+                <div className="flex flex-col sm:flex-row gap-3 items-start">
+                  <div className="w-20 h-20 rounded-2xl bg-slate-100 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center shadow-2xs">
+                    {formData.coverImageUrl ? (
+                      <img
+                        src={formData.coverImageUrl}
+                        alt="Event Cover Preview"
+                        className="w-full h-full object-cover"
+                        onError={(e) => { (e.target as HTMLElement).style.display = "none"; }}
+                      />
+                    ) : (
+                      <ImageIcon className="w-7 h-7 text-slate-300" />
+                    )}
+                  </div>
+
+                  <div className="flex-1 w-full space-y-2">
+                    <input 
+                      required 
+                      type="url" 
+                      placeholder="https://example.com/event-banner.jpg"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-[14px] p-3 text-xs text-[#0F172A] outline-none focus:ring-2 focus:ring-blue-500 transition-all" 
+                      value={formData.coverImageUrl} 
+                      onChange={e=>setFormData({...formData, coverImageUrl:e.target.value})} 
+                    />
+
+                    <CloudinaryUploader
+                      folder="cechstu_events"
+                      multiple={false}
+                      label="Or upload event banner from device"
+                      description="Uploads to Cloudinary and sets the Cover Image URL"
+                      buttonText="Choose Event Banner"
+                      onUploadComplete={(results) => {
+                        if (results.length > 0) {
+                          setFormData(prev => ({ ...prev, coverImageUrl: results[0].secureUrl }));
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Facebook Event URL</label>

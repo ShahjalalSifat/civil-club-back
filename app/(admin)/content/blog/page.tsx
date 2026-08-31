@@ -824,17 +824,49 @@ export default function BlogPage() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                    Author Avatar / Image URL (Optional)
+                {/* Author Avatar / Image Section with Cloudinary Upload */}
+                <div className="space-y-2 pt-1">
+                  <label className="block text-[11px] font-bold text-slate-700">
+                    Author Photo / Avatar (Upload or URL)
                   </label>
-                  <input
-                    type="url"
-                    placeholder="https://example.com/author-avatar.jpg"
-                    className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-[#0F172A] outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                    value={formData.authorImageUrl}
-                    onChange={e => setFormData({...formData, authorImageUrl: e.target.value})}
-                  />
+
+                  <div className="flex flex-col sm:flex-row gap-3 items-start">
+                    <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center shadow-2xs">
+                      {formData.authorImageUrl ? (
+                        <img
+                          src={formData.authorImageUrl}
+                          alt="Author Preview"
+                          className="w-full h-full object-cover"
+                          onError={(e) => { (e.target as HTMLElement).style.display = "none"; }}
+                        />
+                      ) : (
+                        <ImageIcon className="w-6 h-6 text-slate-300" />
+                      )}
+                    </div>
+
+                    <div className="flex-1 w-full space-y-2">
+                      <input
+                        type="url"
+                        placeholder="https://example.com/author-avatar.jpg"
+                        className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-[#0F172A] outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                        value={formData.authorImageUrl}
+                        onChange={e => setFormData({...formData, authorImageUrl: e.target.value})}
+                      />
+
+                      <CloudinaryUploader
+                        folder="cechstu_authors"
+                        multiple={false}
+                        label="Or upload author photo"
+                        description="Uploads to Cloudinary and populates author photo URL"
+                        buttonText="Choose Author Photo"
+                        onUploadComplete={(results) => {
+                          if (results.length > 0) {
+                            setFormData(prev => ({ ...prev, authorImageUrl: results[0].secureUrl }));
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
