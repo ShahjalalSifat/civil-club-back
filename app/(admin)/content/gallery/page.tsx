@@ -34,7 +34,16 @@ import {
   Layers,
   Sparkles,
   Copy,
-  Check
+  Check,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  ArrowDown,
+  ChevronsLeft,
+  ChevronsRight,
+  Crown,
+  GripVertical,
+  ArrowUpDown
 } from "lucide-react";
 
 interface GalleryItem {
@@ -260,6 +269,56 @@ export default function GalleryPage() {
         alert("Failed to delete gallery: " + err.message);
       }
     }
+  };
+
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const moveItem = (fromIndex: number, toIndex: number) => {
+    if (toIndex < 0 || toIndex >= items.length || fromIndex === toIndex) return;
+    const newItems = [...items];
+    const [movedItem] = newItems.splice(fromIndex, 1);
+    newItems.splice(toIndex, 0, movedItem);
+    setItems(newItems);
+  };
+
+  const moveItemToFirst = (index: number) => {
+    moveItem(index, 0);
+  };
+
+  const moveItemToLast = (index: number) => {
+    moveItem(index, items.length - 1);
+  };
+
+  const reverseItems = () => {
+    setItems(prev => [...prev].reverse());
+  };
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", `${index}`);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragOverIndex !== index) {
+      setDragOverIndex(index);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex === null) return;
+    moveItem(draggedIndex, targetIndex);
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
   };
 
   const addItem = () => setItems([...items, { type: "image", url: "" }]);
@@ -527,16 +586,23 @@ export default function GalleryPage() {
                       </div>
                     </div>
 
-                    {/* Media Thumbnail Previews */}
+                    {/* Media Thumbnail Previews with Rank Indicator */}
                     <div className="flex gap-2.5 mb-4 overflow-x-auto pb-2 pt-1">
                       {gal.items && gal.items.length > 0 ? (
                         gal.items.map((it, i) => (
-                          <div key={i} className="w-16 h-16 rounded-xl bg-slate-100 flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-200/80 shadow-2xs">
+                          <div key={i} className="relative w-16 h-16 rounded-xl bg-slate-100 flex-shrink-0 overflow-hidden flex items-center justify-center border border-slate-200/80 shadow-2xs group/thumb">
                             {it.type === 'image' ? (
-                              <img src={it.url} alt="" className="w-full h-full object-cover" />
+                              <img src={it.url} alt={`Rank ${i + 1}`} className="w-full h-full object-cover" />
                             ) : (
                               <Video className="w-6 h-6 text-slate-400" />
                             )}
+                            <div className={`absolute bottom-0 inset-x-0 text-center py-0.5 text-[8px] font-black tracking-tight ${
+                              i === 0 
+                                ? "bg-amber-500 text-slate-950" 
+                                : "bg-black/60 text-white backdrop-blur-2xs"
+                            }`}>
+                              {i === 0 ? "👑 Cover" : `#${i + 1}`}
+                            </div>
                           </div>
                         ))
                       ) : (
@@ -689,7 +755,7 @@ export default function GalleryPage() {
                   <div className="bg-slate-50/80 p-4 rounded-[20px] border border-slate-200/80 mb-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <p className="text-xs text-slate-500">
-                        Paste direct links to images, videos, or YouTube embeds.
+                        Paste direct links to images, videos, or YouTube embeds. Use ▲ ▼ to arrange display rank.
                       </p>
                       <button 
                         type="button" 
@@ -700,9 +766,36 @@ export default function GalleryPage() {
                       </button>
                     </div>
 
-                    <div className="space-y-2.5 max-h-52 overflow-y-auto pr-1">
+                    <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
                       {items.map((item, index) => (
                         <div key={index} className="flex gap-2 items-center bg-white p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                          {/* Rank Badge & Up/Down Arrows */}
+                          <div className="flex items-center gap-1 shrink-0 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
+                            <span className={`text-[11px] font-black ${index === 0 ? 'text-amber-600' : 'text-slate-600'}`}>
+                              {index === 0 ? '👑 #1' : `#${index + 1}`}
+                            </span>
+                            <div className="flex flex-col ml-1">
+                              <button
+                                type="button"
+                                disabled={index === 0}
+                                onClick={() => moveItem(index, index - 1)}
+                                className={`p-0.5 rounded hover:bg-slate-200 transition-colors ${index === 0 ? 'opacity-30 cursor-not-allowed' : 'text-slate-600 hover:text-blue-600'}`}
+                                title="Move Rank Up"
+                              >
+                                <ArrowUp className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={index === items.length - 1}
+                                onClick={() => moveItem(index, index + 1)}
+                                className={`p-0.5 rounded hover:bg-slate-200 transition-colors ${index === items.length - 1 ? 'opacity-30 cursor-not-allowed' : 'text-slate-600 hover:text-blue-600'}`}
+                                title="Move Rank Down"
+                              >
+                                <ArrowDown className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+
                           <select 
                             className="bg-slate-50 border border-slate-200 rounded-lg p-2 outline-none text-xs font-semibold w-28 text-slate-700" 
                             value={item.type} 
@@ -739,81 +832,190 @@ export default function GalleryPage() {
                   </div>
                 )}
 
-                {/* Live Album Media Visual Preview Grid */}
+                {/* Live Album Media Visual Preview Grid with Interactive Rank Reordering */}
                 {items.length > 0 && (
-                  <div className="bg-slate-50 p-4 rounded-[20px] border border-slate-200">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                        <Images className="w-3.5 h-3.5 text-blue-600" />
-                        Album Contents ({items.length} items attached)
-                      </h4>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (confirm(`Remove all ${items.length} media items from this album?`)) {
-                            setItems([]);
-                          }
-                        }}
-                        className="text-[11px] font-bold text-red-500 hover:text-red-700 transition-colors"
-                      >
-                        Clear All
-                      </button>
+                  <div className="bg-slate-50 p-4 rounded-[20px] border border-slate-200 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-slate-200/60">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                          <Images className="w-4 h-4 text-blue-600" />
+                          Album Photos & Display Rank Order ({items.length} items)
+                        </h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Drag & drop photos or click ◀ ▶ to change rank. <strong className="text-amber-600">Rank #1</strong> is the Album Cover on the frontend.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {items.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={reverseItems}
+                            className="text-[11px] font-bold text-slate-700 hover:text-blue-600 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-2xs hover:bg-slate-50 transition-all flex items-center gap-1"
+                            title="Reverse the current photo order"
+                          >
+                            <ArrowUpDown className="w-3 h-3 text-blue-500" />
+                            Reverse Order
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (confirm(`Remove all ${items.length} media items from this album?`)) {
+                              setItems([]);
+                            }
+                          }}
+                          className="text-[11px] font-bold text-red-500 hover:text-red-700 bg-red-50 border border-red-100 px-2.5 py-1 rounded-lg transition-colors"
+                        >
+                          Clear All
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2.5 max-h-48 overflow-y-auto pr-1">
-                      {items.map((item, idx) => (
-                        <div
-                          key={idx}
-                          className="group relative aspect-square rounded-xl bg-slate-200 border border-slate-300/80 overflow-hidden shadow-2xs"
-                        >
-                          {item.type === "image" ? (
-                            <img
-                              src={item.url}
-                              alt=""
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                (e.target as HTMLElement).style.display = "none";
-                              }}
-                            />
-                          ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-white p-1 text-center">
-                              <Video className="w-5 h-5 text-amber-400 mb-1" />
-                              <span className="text-[9px] font-bold uppercase truncate max-w-full">
-                                {item.type}
-                              </span>
-                            </div>
-                          )}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 max-h-72 overflow-y-auto p-1">
+                      {items.map((item, idx) => {
+                        const isCover = idx === 0;
+                        const isDragging = draggedIndex === idx;
+                        const isOver = dragOverIndex === idx;
 
-                          {/* Hover Overlay */}
-                          <div className="absolute inset-0 bg-slate-900/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 p-1">
-                            <button
-                              type="button"
-                              onClick={() => handleCopyUrl(item.url, idx)}
-                              className="p-1.5 rounded-lg bg-white/20 hover:bg-white text-white hover:text-slate-900 transition-colors"
-                              title="Copy media URL"
-                            >
-                              {copiedIndex === idx ? (
-                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        return (
+                          <div
+                            key={idx}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, idx)}
+                            onDragOver={(e) => handleDragOver(e, idx)}
+                            onDrop={(e) => handleDrop(e, idx)}
+                            onDragEnd={handleDragEnd}
+                            className={`group relative flex flex-col rounded-2xl bg-white border transition-all select-none overflow-hidden cursor-grab active:cursor-grabbing ${
+                              isCover 
+                                ? "border-amber-400 ring-2 ring-amber-400/30 shadow-md" 
+                                : "border-slate-200 hover:border-blue-400 shadow-2xs"
+                            } ${isDragging ? "opacity-40 scale-95" : "opacity-100"} ${
+                              isOver ? "ring-2 ring-blue-500 border-blue-500 scale-[1.02]" : ""
+                            }`}
+                          >
+                            {/* Visual Media Box */}
+                            <div className="relative aspect-4/3 w-full bg-slate-100 overflow-hidden">
+                              {item.type === "image" ? (
+                                <img
+                                  src={item.url}
+                                  alt={`Rank ${idx + 1}`}
+                                  className="w-full h-full object-cover pointer-events-none"
+                                  onError={(e) => {
+                                    (e.target as HTMLElement).style.display = "none";
+                                  }}
+                                />
                               ) : (
-                                <Copy className="w-3.5 h-3.5" />
+                                <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 text-white p-2 text-center pointer-events-none">
+                                  <Video className="w-6 h-6 text-amber-400 mb-1" />
+                                  <span className="text-[10px] font-bold uppercase truncate max-w-full">
+                                    {item.type}
+                                  </span>
+                                </div>
                               )}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => removeItem(idx)}
-                              className="p-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-colors"
-                              title="Delete from album"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
 
-                          {/* Index Badge */}
-                          <div className="absolute bottom-1 left-1 bg-black/60 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md backdrop-blur-xs">
-                            #{idx + 1}
+                              {/* Rank Tag Overlay */}
+                              <div className="absolute top-1.5 left-1.5 flex items-center gap-1">
+                                {isCover ? (
+                                  <span className="bg-amber-500 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full shadow-sm flex items-center gap-1 backdrop-blur-xs">
+                                    <Crown className="w-3 h-3 text-slate-950 fill-current" />
+                                    #1 Cover
+                                  </span>
+                                ) : (
+                                  <span className="bg-slate-900/80 text-white font-bold text-[10px] px-2 py-0.5 rounded-full backdrop-blur-xs shadow-2xs">
+                                    #{idx + 1}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Quick Move to Top (#1 Cover) button */}
+                              {!isCover && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    moveItemToFirst(idx);
+                                  }}
+                                  className="absolute top-1.5 right-1.5 p-1 rounded-lg bg-black/60 hover:bg-amber-500 text-white hover:text-slate-950 transition-colors opacity-0 group-hover:opacity-100"
+                                  title="Make this the Cover Photo (#1)"
+                                >
+                                  <Crown className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              {/* Drag Grip Icon Indicator */}
+                              <div className="absolute bottom-1.5 right-1.5 p-1 rounded bg-black/40 text-white/80 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                <GripVertical className="w-3.5 h-3.5" />
+                              </div>
+                            </div>
+
+                            {/* Reorder Action Bar on each Card */}
+                            <div className="p-1.5 bg-slate-50/90 border-t border-slate-100 flex items-center justify-between gap-1">
+                              {/* Move Left Button */}
+                              <button
+                                type="button"
+                                disabled={idx === 0}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  moveItem(idx, idx - 1);
+                                }}
+                                className={`p-1 rounded-lg text-slate-600 hover:text-blue-600 hover:bg-white border border-transparent hover:border-slate-200 transition-all ${
+                                  idx === 0 ? "opacity-25 cursor-not-allowed" : ""
+                                }`}
+                                title="Move Left / Lower Rank"
+                              >
+                                <ArrowLeft className="w-3.5 h-3.5" />
+                              </button>
+
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCopyUrl(item.url, idx);
+                                  }}
+                                  className="p-1 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-white transition-colors"
+                                  title="Copy URL"
+                                >
+                                  {copiedIndex === idx ? (
+                                    <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeItem(idx);
+                                  }}
+                                  className="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                  title="Delete photo"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              {/* Move Right Button */}
+                              <button
+                                type="button"
+                                disabled={idx === items.length - 1}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  moveItem(idx, idx + 1);
+                                }}
+                                className={`p-1 rounded-lg text-slate-600 hover:text-blue-600 hover:bg-white border border-transparent hover:border-slate-200 transition-all ${
+                                  idx === items.length - 1 ? "opacity-25 cursor-not-allowed" : ""
+                                }`}
+                                title="Move Right / Higher Rank"
+                              >
+                                <ArrowRight className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
