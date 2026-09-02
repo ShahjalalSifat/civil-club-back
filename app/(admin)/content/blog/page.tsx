@@ -13,6 +13,9 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { CloudinaryUploader } from "@/components/cloudinary-upload";
+import { MarkdownRenderer } from "@/components/markdown-renderer";
+import { MarkdownToolbar } from "@/components/markdown-toolbar";
+import { BlogFileImporter } from "@/components/blog-file-importer";
 import { 
   Trash2, 
   Edit2, 
@@ -33,7 +36,14 @@ import {
   BookOpen,
   Sparkles,
   Layers,
-  Image as ImageIcon
+  Image as ImageIcon,
+  FileCode,
+  Columns,
+  Maximize2,
+  Download,
+  ExternalLink,
+  GitFork,
+  Paperclip
 } from "lucide-react";
 
 interface BlogPost {
@@ -51,6 +61,8 @@ interface BlogPost {
   descriptionMarkdown: string;
   content?: string;
   coverImageUrl: string;
+  pdfAttachmentUrl?: string;
+  pdfAttachmentName?: string;
   displayInFrontend?: boolean;
   status?: "published" | "draft";
   createdAt: number;
@@ -66,14 +78,17 @@ export default function BlogPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "visible" | "hidden">("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   
+  // Editor view tab: "write" | "split" | "preview"
+  const [editorTab, setEditorTab] = useState<"write" | "split" | "preview">("write");
+
+  // Full Article Reader Preview Modal
+  const [readingPost, setReadingPost] = useState<BlogPost | null>(null);
+
   // Selection state
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
 
-  // Tracks whether the user has manually typed into the Excerpt box during
-  // the current create/edit session. When false, the excerpt is always
-  // regenerated from the latest Content Body on save, so editing the
-  // description without touching the excerpt box keeps them in sync.
+  // Tracks whether the user has manually typed into the Excerpt box
   const [excerptTouched, setExcerptTouched] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -86,6 +101,8 @@ export default function BlogPage() {
     readTime: "",
     excerpt: "",
     coverImageUrl: "",
+    pdfAttachmentUrl: "",
+    pdfAttachmentName: "",
     descriptionMarkdown: "",
     displayInFrontend: true,
   });
@@ -113,6 +130,8 @@ export default function BlogPage() {
           descriptionMarkdown: docData.descriptionMarkdown || docData.content || "",
           content: docData.content || docData.descriptionMarkdown || "",
           coverImageUrl: docData.coverImageUrl || docData.imageUrl || "",
+          pdfAttachmentUrl: docData.pdfAttachmentUrl || "",
+          pdfAttachmentName: docData.pdfAttachmentName || "",
           displayInFrontend: docData.displayInFrontend !== undefined ? Boolean(docData.displayInFrontend) : true,
           status: docData.status || (docData.displayInFrontend === false ? "draft" : "published"),
           createdAt: docData.createdAt || 0,
@@ -233,7 +252,6 @@ export default function BlogPage() {
       });
       await batch.commit();
 
-      // Optimistic update
       setPosts(prev => prev.map(p => selectedIds.includes(p.id) ? {
         ...p,
         displayInFrontend: display,
@@ -287,9 +305,7 @@ export default function BlogPage() {
         ? formData.tags.split(",").map(t => t.trim()).filter(Boolean)
         : [];
       const autoExcerpt = formData.descriptionMarkdown.replace(/[#*`_\[\]]/g, "").trim().slice(0, 160) + (formData.descriptionMarkdown.trim().length > 160 ? "..." : "");
-      // Only keep a manually typed excerpt if the user actually edited the
-      // box this session; otherwise always derive it fresh from the
-      // Content Body so it never goes stale after editing the description.
+      
       const excerptVal = (excerptTouched && formData.excerpt.trim())
         ? formData.excerpt.trim()
         : autoExcerpt;
@@ -311,6 +327,8 @@ export default function BlogPage() {
         bodyRichText: formData.descriptionMarkdown.trim(),
         coverImageUrl: formData.coverImageUrl.trim(),
         imageUrl: formData.coverImageUrl.trim(),
+        pdfAttachmentUrl: formData.pdfAttachmentUrl.trim(),
+        pdfAttachmentName: formData.pdfAttachmentName.trim(),
         displayInFrontend: formData.displayInFrontend,
         status: formData.displayInFrontend ? "published" : "draft",
         updatedAt: Date.now()
@@ -356,11 +374,14 @@ export default function BlogPage() {
       readTime: post.readTime || "",
       excerpt: post.excerpt || "",
       coverImageUrl: post.coverImageUrl || "",
+      pdfAttachmentUrl: post.pdfAttachmentUrl || "",
+      pdfAttachmentName: post.pdfAttachmentName || "",
       descriptionMarkdown: post.descriptionMarkdown || post.content || "",
       displayInFrontend: post.displayInFrontend !== false,
     });
     setEditingId(post.id);
     setExcerptTouched(false);
+    setEditorTab("write");
     setIsModalOpen(true);
   };
 
@@ -375,11 +396,50 @@ export default function BlogPage() {
       readTime: "",
       excerpt: "",
       coverImageUrl: "",
+      pdfAttachmentUrl: "",
+      pdfAttachmentName: "",
       descriptionMarkdown: "", 
       displayInFrontend: true,
     });
     setEditingId(null);
     setExcerptTouched(false);
+    setEditorTab("write");
+  };
+
+  // Append or insert snippet at cursor / end
+  const handleInsertSnippet = (snippet: string) => {
+    setFormData(prev => ({
+      ...prev,
+      descriptionMarkdown: prev.descriptionMarkdown 
+        ? `${prev.descriptionMarkdown.trim()}\n\n${snippet}` 
+        : snippet
+    }));
+  };
+
+  // Handle imported file (.md, .docx, .txt, .pdf)
+  const handleImportMarkdown = (importedMarkdown: string, meta?: any) => {
+    setFormData(prev => {
+      const newTitle = (!prev.title && meta?.title) ? meta.title : prev.title;
+      const newAuthor = (!prev.authorName && meta?.author) ? meta.author : prev.authorName;
+      const newCategory = (!prev.category || prev.category === "General") && meta?.category ? meta.category : prev.category;
+      const newTags = (!prev.tags && meta?.tags) ? meta.tags : prev.tags;
+      const newExcerpt = (!prev.excerpt && meta?.excerpt) ? meta.excerpt : prev.excerpt;
+
+      // If existing content exists, append with clear divider, else replace
+      const combinedMarkdown = prev.descriptionMarkdown.trim()
+        ? `${prev.descriptionMarkdown.trim()}\n\n---\n\n${importedMarkdown}`
+        : importedMarkdown;
+
+      return {
+        ...prev,
+        title: newTitle || prev.title,
+        authorName: newAuthor || prev.authorName,
+        category: newCategory || prev.category,
+        tags: newTags || prev.tags,
+        excerpt: newExcerpt || prev.excerpt,
+        descriptionMarkdown: combinedMarkdown
+      };
+    });
   };
 
   return (
@@ -396,7 +456,7 @@ export default function BlogPage() {
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Publish club articles, author bios, research updates, and control live visibility.
+            Create rich articles with interactive flowcharts, diagrams, direct .MD/.DOCX/.PDF upload, and live preview.
           </p>
         </div>
 
@@ -449,233 +509,247 @@ export default function BlogPage() {
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Search by title, author name, category..."
-              className="w-full bg-slate-50 border border-slate-200/80 rounded-xl pl-9 pr-4 py-2 text-xs text-[#0F172A] outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-400"
+              placeholder="Search by title, author, category, keywords..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3.5 py-2 rounded-xl bg-slate-50/80 border border-slate-200 text-xs text-slate-800 placeholder-slate-400 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium"
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex items-center gap-2 self-start md:self-auto overflow-x-auto">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Status Filter */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold text-slate-600">
+            <button
+              onClick={() => setStatusFilter("all")}
+              className={`px-3 py-1 rounded-lg transition-all ${
+                statusFilter === "all" ? "bg-white text-blue-700 shadow-2xs" : "hover:text-slate-900"
+              }`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setStatusFilter("visible")}
+              className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1 ${
+                statusFilter === "visible" ? "bg-white text-emerald-700 shadow-2xs" : "hover:text-slate-900"
+              }`}
+            >
+              <Eye className="w-3 h-3" /> Visible
+            </button>
+            <button
+              onClick={() => setStatusFilter("hidden")}
+              className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1 ${
+                statusFilter === "hidden" ? "bg-white text-slate-700 shadow-2xs" : "hover:text-slate-900"
+              }`}
+            >
+              <EyeOff className="w-3 h-3" /> Hidden
+            </button>
+          </div>
+
           {/* Category Filter */}
           {availableCategories.length > 0 && (
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 rounded-xl px-3 py-1.5 outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+              aria-label="Filter blog posts by category"
+              className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500/20"
             >
-              <option value="all">All Categories</option>
-              {availableCategories.map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
+              <option value="all">All Categories ({posts.length})</option>
+              {availableCategories.map(cat => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
               ))}
             </select>
           )}
-
-          {/* Status Filter Chips */}
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setStatusFilter("all")}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                statusFilter === "all"
-                  ? "bg-slate-900 text-white shadow-xs"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
-            >
-              All ({posts.length})
-            </button>
-            <button
-              onClick={() => setStatusFilter("visible")}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
-                statusFilter === "visible"
-                  ? "bg-emerald-600 text-white shadow-xs"
-                  : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-              }`}
-            >
-              <Eye className="w-3 h-3" />
-              Live ({posts.filter(p => p.displayInFrontend !== false).length})
-            </button>
-            <button
-              onClick={() => setStatusFilter("hidden")}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 ${
-                statusFilter === "hidden"
-                  ? "bg-amber-600 text-white shadow-xs"
-                  : "bg-amber-50 text-amber-700 hover:bg-amber-100"
-              }`}
-            >
-              <EyeOff className="w-3 h-3" />
-              Hidden ({posts.filter(p => p.displayInFrontend === false).length})
-            </button>
-          </div>
         </div>
       </div>
 
-      {/* Bulk Action Bar (Floating when items are selected) */}
+      {/* Bulk Action Bar (Visible when items selected) */}
       {selectedIds.length > 0 && (
-        <div className="bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-xl border border-slate-800 flex flex-wrap items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+        <div className="bg-blue-600 text-white p-3 sm:p-4 rounded-[20px] shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
           <div className="flex items-center gap-2">
-            <span className="bg-blue-600 text-white text-xs font-bold px-2.5 py-0.5 rounded-full">
+            <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-extrabold">
               {selectedIds.length}
             </span>
-            <span className="text-xs font-bold text-slate-200">
-              Selected Item{selectedIds.length > 1 ? "s" : ""}
-            </span>
-          </div>
-
-          <div className="flex items-center flex-wrap gap-2">
-            <button
-              onClick={() => handleBulkToggleDisplay(true)}
-              disabled={bulkActionLoading}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50"
-            >
-              <Eye className="w-3.5 h-3.5" />
-              Display in Frontend
-            </button>
-
-            <button
-              onClick={() => handleBulkToggleDisplay(false)}
-              disabled={bulkActionLoading}
-              className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50"
-            >
-              <EyeOff className="w-3.5 h-3.5" />
-              Hide from Frontend
-            </button>
-
-            <button
-              onClick={handleBulkDelete}
-              disabled={bulkActionLoading}
-              className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Delete
-            </button>
-
+            <span className="text-xs font-bold">Selected Blog Posts</span>
             <button
               onClick={handleClearSelection}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
-              title="Clear selection"
+              className="ml-2 text-xs text-blue-200 hover:text-white underline"
             >
-              <X className="w-4 h-4" />
+              Clear
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              disabled={bulkActionLoading}
+              onClick={() => handleBulkToggleDisplay(true)}
+              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold flex items-center gap-1.5 transition-colors border border-white/20 cursor-pointer"
+            >
+              <Globe className="w-3.5 h-3.5 text-emerald-300" />
+              <span>Show in Frontend</span>
+            </button>
+
+            <button
+              disabled={bulkActionLoading}
+              onClick={() => handleBulkToggleDisplay(false)}
+              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold flex items-center gap-1.5 transition-colors border border-white/20 cursor-pointer"
+            >
+              <EyeOff className="w-3.5 h-3.5 text-amber-300" />
+              <span>Hide from Frontend</span>
+            </button>
+
+            <button
+              disabled={bulkActionLoading}
+              onClick={handleBulkDelete}
+              className="px-3 py-1.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* Grid of Blog Posts */}
-      <div className="space-y-6 pb-16">
+      {/* Main Blog Post Cards Grid */}
+      <div className="w-full">
         {loading ? (
-          <div className="py-16 text-center text-slate-400 text-sm font-medium">
-            <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-3" />
-            Loading blog posts...
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {[1, 2, 3, 4, 5, 6].map(i => (
+              <div key={i} className="h-96 rounded-[24px] bg-slate-100/80 animate-pulse border border-slate-200/50" />
+            ))}
           </div>
         ) : filteredPosts.length === 0 ? (
-          <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-dashed border-slate-300 p-12 text-center">
-            <FileText className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-            <h4 className="text-sm font-bold text-slate-700">No blog posts found</h4>
+          <div className="text-center py-16 bg-white/60 backdrop-blur-md rounded-[24px] border border-slate-200">
+            <BookOpen className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+            <h3 className="text-base font-bold text-slate-700">No blog posts found</h3>
             <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
               {searchQuery || statusFilter !== "all" || categoryFilter !== "all"
-                ? "Try adjusting your search query or filter." 
-                : "Get started by publishing your first blog post with author details using the button above."}
+                ? "Try adjusting your search query or filters to find what you're looking for."
+                : "Get started by creating your first technical article or importing a Markdown/Word file!"}
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {filteredPosts.map((post) => {
               const isSelected = selectedIds.includes(post.id);
               const isLive = post.displayInFrontend !== false;
               const authorDisplayName = post.authorName || post.author || "CE Club HSTU";
+              const hasDiagrams = post.descriptionMarkdown?.includes("mermaid") || post.descriptionMarkdown?.includes("graph TD") || post.descriptionMarkdown?.includes("flowchart");
+              const hasPdf = Boolean(post.pdfAttachmentUrl);
 
               return (
                 <div
                   key={post.id}
-                  className={`bg-white/90 backdrop-blur-xl rounded-[24px] border transition-all duration-200 overflow-hidden flex flex-col group ${
+                  className={`group relative bg-white rounded-[24px] border transition-all duration-200 flex flex-col overflow-hidden shadow-xs hover:shadow-md ${
                     isSelected 
-                      ? "border-blue-500 ring-2 ring-blue-500/20 shadow-md bg-blue-50/20" 
-                      : "border-slate-200/80 hover:border-slate-300 shadow-xs hover:shadow-md"
+                      ? "border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/10" 
+                      : isLive 
+                      ? "border-slate-200 hover:border-slate-300" 
+                      : "border-slate-200/60 bg-slate-50/40 opacity-80"
                   }`}
                 >
-                  {/* Top Cover Image Area */}
-                  <div className="relative h-48 w-full bg-slate-100 overflow-hidden">
-                    {post.coverImageUrl ? (
-                      <img 
-                        src={post.coverImageUrl} 
-                        alt={post.title} 
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
-                      />
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-1 bg-slate-100">
-                        <FileText className="w-8 h-8 text-slate-300" />
-                        <span className="text-[10px] font-bold tracking-wider uppercase">No Cover Image</span>
-                      </div>
+                  {/* Select Checkbox & Badges Overlay */}
+                  <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleToggleSelect(post.id); }}
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center backdrop-blur-md transition-all shadow-xs ${
+                        isSelected 
+                          ? "bg-blue-600 text-white" 
+                          : "bg-white/80 text-slate-400 hover:text-slate-600 border border-slate-200"
+                      }`}
+                    >
+                      {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                    </button>
+
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase backdrop-blur-md bg-white/90 text-slate-800 border border-slate-200 shadow-2xs">
+                      {post.category || "General"}
+                    </span>
+                  </div>
+
+                  {/* Status Indicator */}
+                  <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
+                    {hasDiagrams && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600/90 text-white backdrop-blur-md flex items-center gap-1 shadow-2xs" title="Contains Flowchart / Diagram">
+                        <GitFork className="w-3 h-3" />
+                        <span className="hidden sm:inline">Flowchart</span>
+                      </span>
                     )}
 
-                    {/* Top Left: Checkbox */}
-                    <div className="absolute top-3 left-3 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleSelect(post.id)}
-                        className={`w-8 h-8 rounded-xl flex items-center justify-center shadow-md backdrop-blur-md transition-all ${
-                          isSelected
-                            ? "bg-blue-600 text-white"
-                            : "bg-white/90 text-slate-400 hover:text-slate-700 hover:bg-white"
-                        }`}
-                        title="Select post"
-                      >
-                        {isSelected ? (
-                          <CheckSquare className="w-4 h-4" />
-                        ) : (
-                          <Square className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-
-                    {/* Top Right: Status Badge */}
-                    <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider backdrop-blur-md shadow-xs flex items-center gap-1 ${
-                        isLive
-                          ? "bg-emerald-500/95 text-white"
-                          : "bg-amber-500/95 text-white"
-                      }`}>
-                        {isLive ? <Globe className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                        {isLive ? "Live" : "Hidden"}
+                    {hasPdf && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-600/90 text-white backdrop-blur-md flex items-center gap-1 shadow-2xs" title="PDF Document Attached">
+                        <Paperclip className="w-3 h-3" />
+                        <span className="hidden sm:inline">PDF</span>
                       </span>
-                    </div>
+                    )}
+
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wide uppercase backdrop-blur-md shadow-2xs ${
+                      isLive 
+                        ? "bg-emerald-500/90 text-white border border-emerald-400/30" 
+                        : "bg-slate-800/80 text-white border border-slate-700/50"
+                    }`}>
+                      {isLive ? "Live" : "Draft"}
+                    </span>
+                  </div>
+
+                  {/* Cover Image */}
+                  <div className="relative h-48 bg-slate-100 overflow-hidden">
+                    {post.coverImageUrl ? (
+                      <img
+                        src={post.coverImageUrl}
+                        alt={post.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = "none";
+                        }}
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-slate-300 gap-2 bg-gradient-to-br from-slate-50 to-slate-100">
+                        <FileText className="w-10 h-10" />
+                        <span className="text-[11px] font-medium text-slate-400">Article Cover</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Body Content */}
                   <div className="p-5 flex-1 flex flex-col justify-between">
                     <div>
-                      {/* Category & Read Time Tags */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                        <span className="text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                          <Tag className="w-3 h-3" />
-                          {post.category || "General"}
+                      {/* Meta info: Read Time & Date */}
+                      <div className="flex items-center gap-3 text-[11px] text-slate-400 font-medium mb-2">
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> {post.readTime || "5 min read"}
                         </span>
-                        {post.readTime && (
-                          <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {post.readTime}
-                          </span>
-                        )}
+                        <span>•</span>
+                        <span>{new Date(post.createdAt || Date.now()).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
                       </div>
 
                       {/* Title */}
-                      <h3 className="font-bold text-base text-[#0F172A] line-clamp-2 group-hover:text-blue-600 transition-colors">
+                      <h3 className="font-montserrat font-bold text-base text-[#0F172A] line-clamp-2 mb-2 leading-snug group-hover:text-blue-600 transition-colors">
                         {post.title}
                       </h3>
 
-                      {/* Author Info Bar */}
-                      <div className="mt-3 py-2 px-3 bg-slate-50/90 rounded-xl border border-slate-100 flex items-center gap-2.5">
+                      {/* Author Details */}
+                      <div className="flex items-center gap-2.5 mt-3 pt-3 border-t border-slate-100">
                         {post.authorImageUrl ? (
-                          <img 
-                            src={post.authorImageUrl} 
-                            alt={authorDisplayName} 
-                            className="w-7 h-7 rounded-full object-cover border border-slate-200 shrink-0" 
+                          <img
+                            src={post.authorImageUrl}
+                            alt={authorDisplayName}
+                            className="w-7 h-7 rounded-full object-cover border border-slate-200"
+                            onError={(e) => { (e.target as HTMLElement).style.display = "none"; }}
                           />
                         ) : (
-                          <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-                            <User className="w-3.5 h-3.5" />
+                          <div className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center text-[11px] font-bold">
+                            {authorDisplayName[0]}
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
@@ -726,19 +800,29 @@ export default function BlogPage() {
                       </div>
 
                       {/* Card Action Buttons */}
-                      <div className="flex items-center justify-end gap-2 pt-1">
+                      <div className="flex items-center justify-between gap-2 pt-1">
                         <button
-                          onClick={() => openEditModal(post)}
-                          className="px-3 py-1.5 rounded-lg text-xs font-bold text-blue-600 hover:bg-blue-50 flex items-center gap-1 transition-colors"
+                          onClick={() => setReadingPost(post)}
+                          className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:text-blue-600 hover:bg-slate-100 flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Preview full article with diagrams and attachments"
                         >
-                          <Edit2 className="w-3.5 h-3.5" /> Edit
+                          <Eye className="w-3.5 h-3.5 text-blue-600" /> Preview
                         </button>
-                        <button
-                          onClick={() => handleDelete(post.id)}
-                          className="px-3 py-1.5 rounded-lg text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-1 transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" /> Delete
-                        </button>
+
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => openEditModal(post)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold text-blue-600 hover:bg-blue-50 flex items-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" /> Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(post.id)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Delete
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -751,15 +835,18 @@ export default function BlogPage() {
 
       {/* Add / Edit Blog Post Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-[28px] p-6 sm:p-8 w-full max-w-3xl shadow-2xl my-8 border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 backdrop-blur-sm p-3 sm:p-4">
+          <div className="bg-white rounded-[28px] p-5 sm:p-7 w-full max-w-5xl shadow-2xl my-6 border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-100">
               <div>
-                <h3 className="text-xl font-bold font-montserrat text-[#0F172A]">
-                  {editingId ? "Edit Blog Article" : "Create New Blog Article"}
+                <h3 className="text-xl font-bold font-montserrat text-[#0F172A] flex items-center gap-2">
+                  <span>{editingId ? "Edit Blog Article" : "Create New Blog Article"}</span>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-bold border border-blue-100">
+                    Flowcharts & MD/Docx Supported
+                  </span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Connected directly with frontend repository data model.
+                  Upload Markdown/Word/PDF files or craft rich articles with interactive diagrams and live preview.
                 </p>
               </div>
               <button
@@ -768,6 +855,20 @@ export default function BlogPage() {
               >
                 <X className="w-5 h-5" />
               </button>
+            </div>
+
+            {/* Direct File Importer (.md, .docx, .txt, .pdf) */}
+            <div className="mb-5">
+              <BlogFileImporter
+                onImportMarkdown={handleImportMarkdown}
+                onAttachPdf={(url, name) => {
+                  setFormData(prev => ({
+                    ...prev,
+                    pdfAttachmentUrl: url,
+                    pdfAttachmentName: name
+                  }));
+                }}
+              />
             </div>
 
             <form onSubmit={handleCreateOrUpdate} className="space-y-5">
@@ -779,7 +880,7 @@ export default function BlogPage() {
                 <input
                   required
                   type="text"
-                  placeholder="e.g. Advancements in High-Performance Sustainable Concrete"
+                  placeholder="e.g. Advancements in High-Performance Sustainable Concrete & Structural Modeling"
                   className="w-full rounded-[16px] border border-slate-200 bg-slate-50 p-3.5 text-sm text-[#0F172A] outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-semibold"
                   value={formData.title}
                   onChange={e => setFormData({...formData, title: e.target.value})}
@@ -879,7 +980,7 @@ export default function BlogPage() {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Structural, Geotech, Events"
+                    placeholder="e.g. Structural, Geotech, Events, Research"
                     className="w-full rounded-[16px] border border-slate-200 bg-slate-50 p-3 text-xs text-[#0F172A] outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     value={formData.category}
                     onChange={e => setFormData({...formData, category: e.target.value})}
@@ -892,7 +993,7 @@ export default function BlogPage() {
                   </label>
                   <input
                     type="text"
-                    placeholder="AutoCAD, Concrete, BIM, Thesis"
+                    placeholder="AutoCAD, Concrete, BIM, Thesis, Flowchart"
                     className="w-full rounded-[16px] border border-slate-200 bg-slate-50 p-3 text-xs text-[#0F172A] outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     value={formData.tags}
                     onChange={e => setFormData({...formData, tags: e.target.value})}
@@ -958,13 +1059,75 @@ export default function BlogPage() {
                 </div>
               </div>
 
+              {/* PDF Document Attachment Section */}
+              <div className="p-4 rounded-[20px] bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-red-600" />
+                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                      Attached PDF / Document (Optional)
+                    </h4>
+                  </div>
+                  {formData.pdfAttachmentUrl && (
+                    <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                      PDF Attached
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      PDF File URL
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://res.cloudinary.com/.../report.pdf"
+                      value={formData.pdfAttachmentUrl}
+                      onChange={e => setFormData({ ...formData, pdfAttachmentUrl: e.target.value })}
+                      className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-[#0F172A] outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                      Document Display Name
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Research_Paper_Final.pdf"
+                      value={formData.pdfAttachmentName}
+                      onChange={e => setFormData({ ...formData, pdfAttachmentName: e.target.value })}
+                      className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-[#0F172A] outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                  </div>
+                </div>
+
+                <CloudinaryUploader
+                  folder="cechstu_blog_documents"
+                  multiple={false}
+                  label="Or upload PDF document to Cloudinary"
+                  description="Uploads PDF and sets the download link for this article"
+                  buttonText="Upload PDF Attachment"
+                  onUploadComplete={(results) => {
+                    if (results.length > 0) {
+                      setFormData(prev => ({
+                        ...prev,
+                        pdfAttachmentUrl: results[0].secureUrl,
+                        pdfAttachmentName: results[0].originalFilename || "Attached_Document.pdf"
+                      }));
+                    }
+                  }}
+                />
+              </div>
+
               {/* Short Excerpt */}
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1.5">
                   Short Excerpt / Summary (Optional)
                 </label>
                 <p className="text-[11px] text-slate-400 mb-1.5 -mt-1">
-                  Leave blank to auto-generate from Content Body on every save. If you type here, this exact text is locked in and won&apos;t update automatically anymore.
+                  Leave blank to auto-generate from Content Body on every save.
                 </p>
                 <input
                   type="text"
@@ -978,24 +1141,119 @@ export default function BlogPage() {
                 />
               </div>
 
-              {/* Markdown Content */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest">
-                    Content Body (Markdown Supported) *
-                  </label>
-                  <span className="text-[11px] text-blue-600 font-semibold flex items-center gap-1">
-                    <Sparkles className="w-3 h-3" /> Markdown Formatter
-                  </span>
+              {/* Markdown Content Section with Toolbar & Live Tab Switch */}
+              <div className="space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <FileCode className="w-4 h-4 text-blue-600" />
+                    <label className="text-xs font-bold text-slate-800 uppercase tracking-widest">
+                      Content Body (Markdown & Mermaid Flowcharts) *
+                    </label>
+                  </div>
+
+                  {/* View Mode Switcher */}
+                  <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold text-slate-600">
+                    <button
+                      type="button"
+                      onClick={() => setEditorTab("write")}
+                      className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
+                        editorTab === "write" ? "bg-white text-blue-700 shadow-2xs" : "hover:text-slate-900"
+                      }`}
+                    >
+                      <FileCode className="w-3.5 h-3.5" />
+                      <span>Write</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setEditorTab("split")}
+                      className={`hidden sm:flex items-center gap-1 px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                        editorTab === "split" ? "bg-white text-indigo-700 shadow-2xs" : "hover:text-slate-900"
+                      }`}
+                    >
+                      <Columns className="w-3.5 h-3.5" />
+                      <span>Split</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setEditorTab("preview")}
+                      className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
+                        editorTab === "preview" ? "bg-white text-emerald-700 shadow-2xs" : "hover:text-slate-900"
+                      }`}
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Live Preview</span>
+                    </button>
+                  </div>
                 </div>
-                <textarea
-                  required
-                  rows={10}
-                  className="w-full rounded-[16px] border border-slate-200 bg-slate-50 p-3.5 text-sm font-mono text-[#0F172A] outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all leading-relaxed"
-                  value={formData.descriptionMarkdown}
-                  onChange={e => setFormData({...formData, descriptionMarkdown: e.target.value})}
-                  placeholder="# Introduction&#10;&#10;Write the full article content here in markdown...&#10;&#10;## Key Findings&#10;- Point 1&#10;- Point 2"
-                />
+
+                {/* Diagrams & Markdown Quick Inserter Toolbar */}
+                <MarkdownToolbar onInsertSnippet={handleInsertSnippet} />
+
+                {/* Content Area according to active Tab */}
+                {editorTab === "write" && (
+                  <div className="relative">
+                    <textarea
+                      required
+                      rows={14}
+                      className="w-full rounded-[16px] border border-slate-200 bg-slate-50 p-4 text-sm font-mono text-[#0F172A] outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all leading-relaxed"
+                      value={formData.descriptionMarkdown}
+                      onChange={e => setFormData({...formData, descriptionMarkdown: e.target.value})}
+                      placeholder="# Introduction&#10;&#10;Write the full article content here in markdown...&#10;&#10;```mermaid&#10;flowchart TD&#10;    A[Planning] --> B[Design]&#10;    B --> C[Construction]&#10;```&#10;&#10;## Key Findings&#10;- Point 1&#10;- Point 2"
+                    />
+                  </div>
+                )}
+
+                {editorTab === "split" && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Markdown & Flowchart Code
+                      </div>
+                      <textarea
+                        required
+                        rows={16}
+                        className="w-full rounded-[16px] border border-slate-200 bg-slate-50 p-3.5 text-xs font-mono text-[#0F172A] outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all leading-relaxed h-[420px]"
+                        value={formData.descriptionMarkdown}
+                        onChange={e => setFormData({...formData, descriptionMarkdown: e.target.value})}
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Live Rendered Output
+                      </div>
+                      <div className="h-[420px] overflow-y-auto rounded-[16px] border border-slate-200 bg-white p-4 shadow-2xs">
+                        {formData.descriptionMarkdown ? (
+                          <MarkdownRenderer content={formData.descriptionMarkdown} />
+                        ) : (
+                          <div className="text-center py-12 text-slate-400 text-xs">
+                            Start typing markdown on the left to see live rendering.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {editorTab === "preview" && (
+                  <div className="min-h-[300px] max-h-[550px] overflow-y-auto rounded-[16px] border border-slate-200 bg-white p-6 shadow-2xs">
+                    {formData.descriptionMarkdown ? (
+                      <div>
+                        <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100 text-xs text-slate-500 font-medium">
+                          <Eye className="w-4 h-4 text-emerald-600" />
+                          <span>Full Article Visual Preview (Includes Diagrams & Tables)</span>
+                        </div>
+                        <MarkdownRenderer content={formData.descriptionMarkdown} />
+                      </div>
+                    ) : (
+                      <div className="text-center py-16 text-slate-400 text-xs">
+                        No content written yet. Switch to &quot;Write&quot; tab or choose a file above to add content!
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Live Switch in Form */}
@@ -1032,18 +1290,134 @@ export default function BlogPage() {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-6 py-3 rounded-[16px] border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all"
+                  className="px-6 py-3 rounded-[16px] border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-3 rounded-[16px] bg-blue-600 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition-all hover:scale-[1.02]"
+                  className="px-6 py-3 rounded-[16px] bg-blue-600 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition-all hover:scale-[1.02] cursor-pointer"
                 >
                   {editingId ? "Save Article Changes" : "Publish Article to Frontend"}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Full Article Reader Preview Modal */}
+      {readingPost && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/70 backdrop-blur-md p-3 sm:p-6">
+          <div className="bg-white rounded-[32px] p-6 sm:p-10 w-full max-w-4xl shadow-2xl my-6 border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header Bar */}
+            <div className="flex items-center justify-between pb-4 mb-6 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-100">
+                  {readingPost.category || "Article"}
+                </span>
+                <span className="text-xs text-slate-400 font-medium">
+                  {readingPost.readTime || "5 min read"}
+                </span>
+              </div>
+
+              <button
+                onClick={() => setReadingPost(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Article Title */}
+            <h1 className="text-2xl sm:text-3xl font-extrabold font-montserrat text-slate-900 mb-4 tracking-tight leading-tight">
+              {readingPost.title}
+            </h1>
+
+            {/* Author Badge */}
+            <div className="flex items-center gap-3 mb-6 pb-5 border-b border-slate-100">
+              {readingPost.authorImageUrl ? (
+                <img
+                  src={readingPost.authorImageUrl}
+                  alt={readingPost.authorName || "Author"}
+                  className="w-10 h-10 rounded-full object-cover border border-slate-200 shadow-2xs"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm">
+                  {(readingPost.authorName || readingPost.author || "C")[0]}
+                </div>
+              )}
+              <div>
+                <p className="text-sm font-bold text-slate-800">
+                  {readingPost.authorName || readingPost.author || "CE Club HSTU"}
+                </p>
+                {readingPost.authorRole && (
+                  <p className="text-xs text-slate-500">{readingPost.authorRole}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Cover Image if present */}
+            {readingPost.coverImageUrl && (
+              <div className="my-6 rounded-2xl overflow-hidden border border-slate-200 shadow-sm max-h-[420px] bg-slate-100">
+                <img
+                  src={readingPost.coverImageUrl}
+                  alt={readingPost.title}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            )}
+
+            {/* PDF Attachment Download Pill if available */}
+            {readingPost.pdfAttachmentUrl && (
+              <div className="my-6 p-4 rounded-2xl bg-gradient-to-r from-red-50 to-rose-50 border border-red-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-red-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-red-950">
+                      Attached Document / Research Paper
+                    </h4>
+                    <p className="text-[11px] text-red-700">
+                      {readingPost.pdfAttachmentName || "Document.pdf"}
+                    </p>
+                  </div>
+                </div>
+
+                <a
+                  href={readingPost.pdfAttachmentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs hover:scale-[1.02] transition-all"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download / View PDF</span>
+                </a>
+              </div>
+            )}
+
+            {/* Formatted Markdown Body with Flowcharts */}
+            <div className="mt-6">
+              <MarkdownRenderer
+                content={readingPost.descriptionMarkdown || readingPost.content || "No content available."}
+              />
+            </div>
+
+            {/* Footer tags */}
+            {readingPost.tags && readingPost.tags.length > 0 && (
+              <div className="mt-8 pt-5 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+                <Tag className="w-3.5 h-3.5 text-slate-400" />
+                {readingPost.tags.map((tag, idx) => (
+                  <span
+                    key={idx}
+                    className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-700"
+                  >
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
