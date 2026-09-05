@@ -9,6 +9,9 @@
     "lint": "next lint",
     "clean": "next clean"
   },
+  "engines": {
+    "node": ">=18.18.0"
+  },
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@hookform/resolvers": "^5.2.1",
