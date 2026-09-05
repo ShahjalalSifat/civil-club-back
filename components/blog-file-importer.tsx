@@ -260,7 +260,7 @@ export function BlogFileImporter({ onImportMarkdown, onAttachPdf }: BlogFileImpo
       }
       // 2. Word Document (.docx) with embedded pictures & diagrams
       else if (fileName.endsWith(".docx")) {
-        const mammothModule: any = await import("mammoth");
+        const mammothModule: any = await import("mammoth/mammoth.browser").catch(() => import("mammoth"));
         const mammoth = mammothModule.default || mammothModule;
         const arrayBuffer = await file.arrayBuffer();
         let imageCounter = 0;
