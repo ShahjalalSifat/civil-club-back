@@ -19,28 +19,30 @@ import {
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
-  const pathname = usePathname();
+  const rawPathname = usePathname();
+  const pathname = rawPathname || "";
 
   if (loading) return null; // handled by AuthProvider
   if (!user) return null; // handled by AuthProvider redirect
 
   // Derive simple section title for mobile header
   const getPageTitle = () => {
-    if (pathname === "/") return "Dashboard";
-    if (pathname.includes("/leadership")) return "Leadership";
-    if (pathname.includes("/constitution")) return "Constitution";
-    if (pathname.includes("/history")) return "History";
-    if (pathname.includes("/blog")) return "Blog";
-    if (pathname.includes("/gallery")) return "Gallery";
-    if (pathname.includes("/magazine")) return "Magazine";
-    if (pathname.includes("/resources")) return "Resources";
-    if (pathname.includes("/log")) return "Events Log";
-    if (pathname.includes("/notice")) return "Notices";
-    if (pathname.includes("/certificate")) return "Certificates";
-    if (pathname.includes("/membership")) return "Membership";
-    if (pathname.includes("/location")) return "Location";
-    if (pathname.includes("/faq")) return "FAQ";
-    if (pathname.includes("/footer")) return "Footer Settings";
+    const path = pathname || "";
+    if (path === "/") return "Dashboard";
+    if (path.includes("/leadership")) return "Leadership";
+    if (path.includes("/constitution")) return "Constitution";
+    if (path.includes("/history")) return "History";
+    if (path.includes("/blog")) return "Blog";
+    if (path.includes("/gallery")) return "Gallery";
+    if (path.includes("/magazine")) return "Magazine";
+    if (path.includes("/resources")) return "Resources";
+    if (path.includes("/log")) return "Events Log";
+    if (path.includes("/notice")) return "Notices";
+    if (path.includes("/certificate")) return "Certificates";
+    if (path.includes("/membership")) return "Membership";
+    if (path.includes("/location")) return "Location";
+    if (path.includes("/faq")) return "FAQ";
+    if (path.includes("/footer")) return "Footer Settings";
     return "Admin Portal";
   };
 

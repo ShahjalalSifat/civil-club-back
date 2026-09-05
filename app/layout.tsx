@@ -2,6 +2,8 @@ import type {Metadata} from 'next';
 import './globals.css';
 import { AuthProvider } from '@/components/auth-provider';
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: 'Club Admin Panel',
   description: 'Admin panel for the Club website to manage content, events, and leadership.',

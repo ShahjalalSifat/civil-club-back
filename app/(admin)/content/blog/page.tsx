@@ -334,6 +334,17 @@ export default function BlogPage() {
         updatedAt: Date.now()
       };
 
+      // Extract all embedded images / diagrams from markdown
+      const embeddedImgMatches = Array.from(formData.descriptionMarkdown.matchAll(/!\[([^\]]*)\]\((https?:\/\/[^\s\)]+|data:image\/[^\s\)]+)\)/g));
+      const extractedImagesList = embeddedImgMatches.map((m, idx) => ({
+        index: idx + 1,
+        alt: m[1] || `Figure ${idx + 1}`,
+        url: m[2]
+      }));
+      payload.embeddedImages = extractedImagesList.map(item => item.url);
+      payload.visualDiagrams = extractedImagesList;
+      payload.hasDiagrams = extractedImagesList.length > 0 || formData.descriptionMarkdown.includes("```mermaid");
+
       if (editingId) {
         await updateDoc(doc(db, "blogs", editingId), payload);
       } else {
@@ -424,6 +435,7 @@ export default function BlogPage() {
       const newCategory = (!prev.category || prev.category === "General") && meta?.category ? meta.category : prev.category;
       const newTags = (!prev.tags && meta?.tags) ? meta.tags : prev.tags;
       const newExcerpt = (!prev.excerpt && meta?.excerpt) ? meta.excerpt : prev.excerpt;
+      const newCover = (!prev.coverImageUrl && meta?.coverImageUrl) ? meta.coverImageUrl : prev.coverImageUrl;
 
       // If existing content exists, append with clear divider, else replace
       const combinedMarkdown = prev.descriptionMarkdown.trim()
@@ -437,6 +449,7 @@ export default function BlogPage() {
         category: newCategory || prev.category,
         tags: newTags || prev.tags,
         excerpt: newExcerpt || prev.excerpt,
+        coverImageUrl: newCover || prev.coverImageUrl,
         descriptionMarkdown: combinedMarkdown
       };
     });

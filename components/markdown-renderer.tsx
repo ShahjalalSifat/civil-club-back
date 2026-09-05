@@ -4,7 +4,7 @@ import React from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MermaidDiagram } from "./mermaid-diagram";
-import { Copy, Check, FileText, Download, ExternalLink } from "lucide-react";
+import { Copy, Check, FileText, Download, ExternalLink, Image as ImageIcon, Maximize2 } from "lucide-react";
 
 interface MarkdownRendererProps {
   content: string;
@@ -171,21 +171,34 @@ export function MarkdownRenderer({ content, className = "" }: MarkdownRendererPr
           },
           img({ src, alt }) {
             return (
-              <figure className="my-5 not-prose">
-                <div className="rounded-2xl overflow-hidden border border-slate-200/90 shadow-sm bg-slate-50">
+              <figure className="my-6 not-prose">
+                <div className="group relative rounded-2xl overflow-hidden border border-slate-200 shadow-xs bg-slate-50/80 hover:border-blue-300 transition-all flex items-center justify-center p-2 sm:p-4">
                   <img
                     src={src}
-                    alt={alt || "Blog visual"}
-                    className="w-full max-h-[500px] object-cover"
+                    alt={alt || "Article diagram / image"}
+                    className="max-h-[650px] w-auto max-w-full object-contain mx-auto rounded-xl transition-transform duration-200"
                     loading="lazy"
                     onError={(e) => {
                       (e.target as HTMLElement).style.display = "none";
                     }}
                   />
+                  {typeof src === "string" && src && (
+                    <a
+                      href={src}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Open full resolution diagram in new tab"
+                      className="absolute top-3 right-3 px-2.5 py-1 rounded-xl bg-slate-900/80 hover:bg-slate-900 text-white text-[11px] font-semibold flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-xs shadow-xs"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                      <span>Full View</span>
+                    </a>
+                  )}
                 </div>
                 {alt && (
-                  <figcaption className="text-center text-xs text-slate-500 mt-2 font-medium">
-                    {alt}
+                  <figcaption className="text-center text-xs text-slate-500 mt-2 font-medium italic flex items-center justify-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span>{alt}</span>
                   </figcaption>
                 )}
               </figure>
